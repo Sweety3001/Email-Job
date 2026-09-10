@@ -1,0 +1,100 @@
+// ReachInbox scheduler — Prisma schema (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  googleId  String   @unique
+  name      String
+  email     String   @unique
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns        Campaign[]
+  emails           Email[]
+  slackIntegration SlackIntegration?
+}
+
+model Sender {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  smtpHost  String
+  smtpPort  Int
+  smtpUser  String
+  smtpPass  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  emails Email[]
+}
+
+model SlackIntegration {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  botToken  String
+  channelId String
+  teamName  String?
+  scopes    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  subject         String
+  body            String
+  startTime       DateTime
+  delaySeconds    Int      @default(5)
+  hourlyLimit     Int?
+  status          String   @default("scheduled") // scheduled | running | completed | cancelled
+  totalRecipients Int      @default(0)
+  sentCount       Int      @default(0)
+  failedCount     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails  Email[]
+
+  @@index([userId, createdAt])
+}
+
+model Email {
+  id          String    @id @default(cuid())
+  campaignId  String
+  userId      String
+  recipient   String
+  subject     String
+  body        String
+  senderId    String?
+  status      String    @default("scheduled") // scheduled | sending | sent | failed
+  scheduledAt DateTime
+  sentAt      DateTime?
+  error       String?
+  attempts    Int       @default(0)
+  previewUrl  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender   Sender?  @relation(fields: [senderId], references: [id])
+
+  @@unique([campaignId, recipient]) // idempotency: same recipient can't be queued twice in a campaign
+  @@index([userId, status, scheduledAt])
+  @@index([userId, sentAt])
+  @@index([campaignId])
+}
